@@ -1285,11 +1285,12 @@ async function refreshAllPrices(onProgress) {
     try {
       const c = await getJSON("/cards/" + encodeURIComponent(x.cardId));
       x.price = pickPrice(c.pricing, x.variant); x.priceAt = Date.now(); x.dexId = c.dexId || []; x.stage = c.stage || null;
+      if (c.image) x.image = c.image; // picks up photos the database adds later
       if (!x.addPrice) x.addPrice = x.price;
     } catch (e) { failed++; }
     done++;
   }
-  for (const w of wishlist) { try { const c = await getJSON("/cards/" + encodeURIComponent(w.cardId)); w.price = pickPrice(c.pricing, cardVariants(c)[0] || "normal"); } catch (e) {} }
+  for (const w of wishlist) { try { const c = await getJSON("/cards/" + encodeURIComponent(w.cardId)); w.price = pickPrice(c.pricing, cardVariants(c)[0] || "normal"); if (c.image) w.image = c.image; } catch (e) {} }
   settings.lastRefresh = Date.now(); saveSettings(); saveWish(); saveCollection(); renderCollection(); refreshCurrent();
   return { done, failed };
 }
