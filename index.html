@@ -149,6 +149,14 @@
   .switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--panel); border-radius: 12px; padding: 12px 14px; margin-top: 10px; }
   .switch input { width: 46px; height: 26px; accent-color: var(--accent); }
   .toast button { background: rgba(255,255,255,.25); color: #fff; border: 0; border-radius: 12px; padding: 4px 10px; margin-left: 10px; font-weight: 700; }
+  .badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 10px; }
+  .badge { background: var(--panel2); border-radius: 12px; padding: 8px 6px; text-align: center; opacity: .55; }
+  .badge .be { font-size: 28px; filter: grayscale(1); }
+  .badge.got { opacity: 1; box-shadow: inset 0 0 0 2px var(--accent); }
+  .badge.got .be { filter: none; }
+  .badge .bn { font-size: 12px; font-weight: 700; margin-top: 2px; }
+  .badge .bh { font-size: 10px; color: var(--muted); line-height: 1.25; margin-top: 2px; }
+  #cardsSeg button { font-size: 12px; padding: 8px 2px; }
   label.f { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
 </style>
 </head>
@@ -200,6 +208,11 @@
 
   <!-- COLLECTION -->
   <section class="view" id="view-collection">
+    <div class="seg" id="cardsSeg" style="margin-bottom:6px">
+      <button data-c="all" class="on">All</button><button data-c="folders">📁 Folders</button><button data-c="wish">⭐ Wish</button><button data-c="trade">🔁 Trade</button><button data-c="grail">👑 Grails</button>
+    </div>
+    <div id="cardsOther" style="display:none"></div>
+    <div id="cardsAll">
     <div class="row">
       <div><label class="f">Group by</label>
         <select id="groupBy">
@@ -220,6 +233,7 @@
     <div style="height:10px"></div>
     <input type="text" id="filterText" placeholder="🔍 Find in my collection" autocomplete="off">
     <div id="collectionList"></div>
+    </div>
   </section>
 
   <!-- SETS -->
@@ -319,7 +333,7 @@ function save(key, value) {
 let collection = load(KEY, []);
 let settings = Object.assign({ rateUSD: 1.53, rateEUR: 1.78, groupBy: "type", sortBy: "value",
   theme: "dark", accent: "#ffcb05", tile: "medium", quick: false }, load(SKEY, {}));
-function saveCollection() { save(KEY, collection); renderHeader(); }
+function saveCollection() { save(KEY, collection); renderHeader(); if (typeof recordHistory === "function") { recordHistory(); checkBadges(); } }
 function saveSettings() { save(SKEY, settings); }
 
 /* ======================= Helpers ======================= */
@@ -411,7 +425,7 @@ let setsMap = null;
 async function getSets() {
   if (setsMap) return setsMap;
   const cached = load(SETS_KEY, null);
-  if (cached && Date.now() - cached.at < 7 * 864e5) { setsMap = cached.map; return setsMap; }
+  if (cached && Date.now() - cached.at < 864e5) { setsMap = cached.map; return setsMap; } // re-check daily so brand-new sets appear
   const list = await getJSON("/sets");
   let pocket = new Set();
   try { const tcgp = await getJSON("/series/tcgp"); (tcgp.sets || []).forEach(s => pocket.add(s.id)); } catch (e) {}
@@ -662,7 +676,9 @@ async function openAddSheet(id) {
       <div class="qtybox"><button data-q="-1">−</button><b>${qty}</b><button data-q="1">+</button></div>
       <button class="btn big yellow" id="btnAdd">Add to my cards</button>
       <div style="height:8px"></div>
+      ${owned ? "" : `<button class="btn big ghost" id="btnWish">${isWished(c.id) ? "⭐ On your wishlist — tap to remove" : "☆ Add to wishlist"}</button><div style="height:8px"></div>`}
       <button class="btn big ghost" id="btnCancel">Not this one</button>`);
+    if ($("btnWish")) $("btnWish").onclick = () => { toggleWish(c); renderCardsOther(); render(); };
     $("sheet").querySelectorAll("[data-v]").forEach(b => b.onclick = () => { variant = b.dataset.v; render(); });
     $("sheet").querySelectorAll("[data-q]").forEach(b => b.onclick = () => { qty = Math.max(1, qty + +b.dataset.q); render(); });
     $("btnCancel").onclick = closeSheet;
@@ -679,8 +695,9 @@ function addCard(c, variant, qty) {
     cardId: c.id, name: c.name, image: c.image || null, setId: c.set?.id, setName: c.set?.name,
     localId: c.localId, official: c.set?.cardCount?.official, rarity: c.rarity || "", types: c.types || [],
     category: c.category, hp: c.hp, dexId: c.dexId || [], stage: c.stage || null,
-    variant, qty, price: p, priceAt: Date.now(), addedAt: Date.now()
+    variant, qty, price: p, addPrice: p, priceAt: Date.now(), addedAt: Date.now()
   });
+  removeWishIfOwned(c.id);
   saveCollection(); renderCollection(); refreshCurrent();
 }
 
@@ -745,13 +762,15 @@ function openOwnedSheet(uid) {
         <span>Value each</span><span><b style="color:var(--accent-text)">${aud(cardValue(x))}</b> ${x.price ? `<span class="muted">(from ${x.price.currency === "EUR" ? "€" : "US$"}${x.price.amount})</span>` : ""}</span>
         <span>Price checked</span><span>${new Date(x.priceAt).toLocaleDateString("en-AU")}</span>
       </div>
+      <div id="ownExtra"></div>
       <div class="qtybox"><button data-q="-1">−</button><b>${x.qty}</b><button data-q="1">+</button></div>
       <button class="btn big danger" id="btnRemove">Remove from my cards</button>
       <div style="height:8px"></div>
       <button class="btn big ghost" id="btnClose">Done</button>`);
     $("sheet").querySelectorAll("[data-q]").forEach(b => b.onclick = () => { x.qty = Math.max(1, x.qty + +b.dataset.q); saveCollection(); renderCollection(); refreshCurrent(); render(); });
-    $("btnRemove").onclick = () => { if (confirm(`Remove ${x.name}?`)) { collection = collection.filter(c => c.uid !== uid); saveCollection(); renderCollection(); refreshCurrent(); closeSheet(); } };
+    $("btnRemove").onclick = () => { if (confirm(`Remove ${x.name}?`)) { collection = collection.filter(c => c.uid !== uid); saveCollection(); renderCollection(); renderCardsOther(); refreshCurrent(); closeSheet(); } };
     $("btnClose").onclick = closeSheet;
+    renderOwnExtra(x, render);
   };
   render();
 }
@@ -761,18 +780,13 @@ $("rateUSD").value = settings.rateUSD; $("rateEUR").value = settings.rateEUR;
 $("rateUSD").onchange = e => { settings.rateUSD = parseFloat(e.target.value) || settings.rateUSD; saveSettings(); renderHeader(); renderCollection(); };
 $("rateEUR").onchange = e => { settings.rateEUR = parseFloat(e.target.value) || settings.rateEUR; saveSettings(); renderHeader(); renderCollection(); };
 $("btnRefresh").onclick = async () => {
-  const b = $("btnRefresh"); b.disabled = true; let done = 0, failed = 0;
-  for (const x of collection) {
-    $("refreshStatus").textContent = `Updating ${done + 1} of ${collection.length}…`;
-    try { const c = await getJSON("/cards/" + encodeURIComponent(x.cardId)); x.price = pickPrice(c.pricing, x.variant); x.priceAt = Date.now(); x.dexId = c.dexId || []; x.stage = c.stage || null; }
-    catch (e) { failed++; }
-    done++;
-  }
-  saveCollection(); renderCollection(); b.disabled = false;
+  const b = $("btnRefresh"); b.disabled = true;
+  const { done, failed } = await refreshAllPrices((d, n) => $("refreshStatus").textContent = `Updating ${d + 1} of ${n}…`);
+  b.disabled = false;
   $("refreshStatus").textContent = `Done! ${done - failed} updated${failed ? `, ${failed} couldn't be reached` : ""}.`;
 };
 $("btnExport").onclick = () => {
-  const blob = new Blob([JSON.stringify({ app: "cardvault", version: 1, savedAt: new Date().toISOString(), collection }, null, 1)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify({ app: "cardvault", version: 2, savedAt: new Date().toISOString(), collection, wishlist, folders, history: valueHistory, badges: earnedBadges }, null, 1)], { type: "application/json" });
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
   a.download = `card-vault-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
@@ -782,12 +796,19 @@ $("importInput").onchange = async (e) => {
   try {
     const data = JSON.parse(await f.text());
     if (!Array.isArray(data.collection)) throw new Error("not a Card Vault backup");
-    if (confirm(`Replace your collection with the backup (${data.collection.length} entries)?`)) { collection = data.collection; saveCollection(); renderCollection(); toast("Backup restored"); }
+    if (confirm(`Replace your collection with the backup (${data.collection.length} entries)?`)) { collection = data.collection;
+      if (Array.isArray(data.wishlist)) { wishlist = data.wishlist; saveWish(); }
+      if (Array.isArray(data.folders)) { folders = data.folders; saveFolders(); }
+      if (Array.isArray(data.history)) { valueHistory = data.history; save(HKEY, valueHistory); }
+      if (Array.isArray(data.badges)) { earnedBadges = data.badges; save(BKEY, earnedBadges); }
+      saveCollection(); renderCollection(); toast("Backup restored"); }
   } catch (err) { alert("Couldn't restore: " + err.message); }
   e.target.value = "";
 };
 $("btnClear").onclick = () => {
-  if (confirm("Delete EVERY card in your collection? This can't be undone.") && confirm("Really sure?")) { collection = []; saveCollection(); renderCollection(); }
+  if (confirm("Delete EVERY card in your collection? This can't be undone.") && confirm("Really sure?")) {
+    collection = []; wishlist = []; folders = []; valueHistory = []; earnedBadges = null;
+    saveWish(); saveFolders(); save(HKEY, valueHistory); localStorage.removeItem(BKEY); saveCollection(); renderCollection(); }
 };
 
 /* ======================= Navigation ======================= */
@@ -797,7 +818,7 @@ function showView(name) {
   document.querySelectorAll("nav button").forEach(x => x.classList.toggle("active", x.dataset.view === name));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + name));
   if (name !== "scan") stopCamera();
-  if (name === "collection") renderCollection();
+  if (name === "collection") renderCardsTab();
   if (name === "sets") renderSets();
   if (name === "dex") renderDex();
   if (name === "stats") renderStats();
@@ -930,14 +951,18 @@ async function openSet(id) {
 const GENS = [[1, 151, "Kanto"], [152, 251, "Johto"], [252, 386, "Hoenn"], [387, 493, "Sinnoh"], [494, 649, "Unova"],
   [650, 721, "Kalos"], [722, 809, "Alola"], [810, 905, "Galar"], [906, 1025, "Paldea"]];
 const SPRITE = n => `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${n}.png`;
-let speciesNames = load("cardvault.species.v1", null);
+let speciesCache = load("cardvault.species.v2", null);
+let speciesNames = speciesCache && Date.now() - speciesCache.at < 30 * 864e5 ? speciesCache.names : null; // re-check monthly for new Pokémon
 let dexGen = 0, dexFilter = "all";
 async function getSpecies() {
   if (speciesNames && speciesNames.length >= 1000) return speciesNames;
-  const r = await fetch("https://pokeapi.co/api/v2/pokemon-species?limit=1025");
-  const d = await r.json();
-  speciesNames = d.results.map(x => x.name.split("-").map(w => w[0].toUpperCase() + w.slice(1)).join(" "));
-  save("cardvault.species.v1", speciesNames);
+  if (!navigator.onLine && speciesCache) return (speciesNames = speciesCache.names);
+  try {
+    const r = await fetch("https://pokeapi.co/api/v2/pokemon-species?limit=2000");
+    const d = await r.json();
+    speciesNames = d.results.map(x => x.name.split("-").map(w => w[0].toUpperCase() + w.slice(1)).join(" "));
+    save("cardvault.species.v2", { at: Date.now(), names: speciesNames });
+  } catch (e) { if (speciesCache) speciesNames = speciesCache.names; else throw e; }
   return speciesNames;
 }
 function ownedByDex() {
@@ -954,10 +979,12 @@ async function renderDex() {
     $("dexGrid").innerHTML = '<div class="empty"><span class="spinner"></span>Loading the Pokédex…</div>';
     try { names = await getSpecies(); } catch (e) { $("dexGrid").innerHTML = '<div class="empty">Need internet the first time to load the Pokédex.</div>'; return; }
   }
-  const caught = [...owned.keys()].filter(n => n >= 1 && n <= 1025).length;
-  $("dexTotal").textContent = `Caught ${caught} of 1025`;
-  $("dexPct").textContent = Math.round(caught / 1025 * 1000) / 10 + "%";
-  $("dexBar").style.width = (caught / 1025 * 100) + "%";
+  const TOTAL = names.length;
+  if (TOTAL > GENS[GENS.length - 1][1]) GENS.push([GENS[GENS.length - 1][1] + 1, TOTAL, "New"]); // a brand-new generation
+  const caught = [...owned.keys()].filter(n => n >= 1 && n <= TOTAL).length;
+  $("dexTotal").textContent = `Caught ${caught} of ${TOTAL}`;
+  $("dexPct").textContent = Math.round(caught / TOTAL * 1000) / 10 + "%";
+  $("dexBar").style.width = (caught / TOTAL * 100) + "%";
   $("genChips").innerHTML = GENS.map(([a, b, r], i) => {
     let c = 0; for (const n of owned.keys()) if (n >= a && n <= b) c++;
     return `<button class="chip ${i === dexGen ? "on" : ""}" data-g="${i}">Gen ${i + 1} · ${r} <span class="muted">${c}/${b - a + 1}</span></button>`;
@@ -1011,7 +1038,7 @@ function bars(rows, fmt) {
   return rows.map(([label, v, color]) => `<div class="brow"><span class="lbl">${label}</span><div class="bar"><i style="width:${v / max * 100}%;${color ? "background:" + color : ""}"></i></div><span>${fmt ? fmt(v) : v}</span></div>`).join("");
 }
 function renderStats() {
-  if (!collection.length) { $("statsBody").innerHTML = '<div class="empty">No cards yet — scan some and your stats appear here.</div>'; return; }
+  if (!collection.length) { $("statsBody").innerHTML = '<div class="empty">No cards yet — scan some and your stats appear here.</div>' + badgesCard(); return; }
   const count = collection.reduce((n, x) => n + x.qty, 0);
   const total = collection.reduce((n, x) => n + (cardValue(x) || 0) * x.qty, 0);
   const unique = new Set(collection.map(x => x.cardId)).size;
@@ -1039,11 +1066,283 @@ function renderStats() {
     <div class="card"><b>⚡ Types</b>${bars([...byType.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => [`<span class="dot" style="background:${TYPE_COLORS[k] || "#666"}"></span> ${esc(k)}`, v, TYPE_COLORS[k]]))}</div>
     <div class="card"><b>✨ How rare</b>${bars([...byRarity.entries()].sort((a, b) => b[0] - a[0]).map(([k, v]) => [esc(RARITY_LABEL[k].split(" ")[0]) + " " + esc(RARITY_LABEL[k].split(" ").slice(1).join(" ")), v]))}</div>
     <div class="card"><b>📚 Value by set</b>${bars([...bySetVal.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => [esc(k), v]), v => aud(v))}</div>`;
+  $("statsBody").innerHTML = valueChart() + $("statsBody").innerHTML.replace('<div class="card"><b>💎 Most valuable</b>', badgesCard() + '<div class="card"><b>💎 Most valuable</b>');
+  bindChart();
   $("statsBody").querySelectorAll(".toprow").forEach(r => r.onclick = () => openOwnedSheet(r.dataset.uid));
 }
 
 applyLook();
+
+/* ======================= Round 2: wishlist, tags, folders, value history, badges ======================= */
+const WKEY = "cardvault.wish.v1", FKEY = "cardvault.folders.v1", HKEY = "cardvault.history.v1", BKEY = "cardvault.badges.v1";
+let wishlist = load(WKEY, []);
+let folders = load(FKEY, []);
+let valueHistory = load(HKEY, []);
+let earnedBadges = load(BKEY, null);
+if (earnedBadges === null && !collection.length) earnedBadges = []; // brand-new app: celebrate every badge
+const saveWish = () => save(WKEY, wishlist);
+const saveFolders = () => save(FKEY, folders);
+
+/* ---------- Wishlist ---------- */
+const isWished = id => wishlist.some(w => w.cardId === id);
+function toggleWish(c) {
+  if (isWished(c.id)) { wishlist = wishlist.filter(w => w.cardId !== c.id); toast("Removed from wishlist"); }
+  else {
+    const v = cardVariants(c)[0] || "normal";
+    wishlist.push({ cardId: c.id, name: c.name, image: c.image || null, setName: c.set?.name, localId: c.localId,
+      official: c.set?.cardCount?.official, price: pickPrice(c.pricing, v), addedAt: Date.now() });
+    toast("⭐ Added to wishlist");
+  }
+  saveWish(); checkBadges();
+}
+function removeWishIfOwned(id) { if (isWished(id)) { wishlist = wishlist.filter(w => w.cardId !== id); saveWish(); } }
+
+/* ---------- Tags & folders on an owned card ---------- */
+const FOLDER_EMOJI = ["📁", "⭐", "🔥", "💧", "🌿", "⚡", "💎", "🎁", "📦", "🏆"];
+function renderOwnExtra(x, rerender) {
+  const box = $("ownExtra"); if (!box) return;
+  const now = cardValue(x), was = x.addPrice ? toAUD(x.addPrice) : null;
+  let change = "";
+  if (now != null && was != null && Math.abs(now - was) >= 0.01) {
+    const pct = was ? Math.round((now - was) / was * 100) : 0;
+    change = `<div class="muted" style="text-align:center;margin:-4px 0 10px">${now > was ? "📈" : "📉"} Was ${aud(was)} when added → now ${aud(now)}
+      <b style="color:${now > was ? "var(--ok)" : "var(--danger)"}">${now > was ? "+" : ""}${pct}%</b></div>`;
+  }
+  const tags = x.tags || [];
+  box.innerHTML = `${change}
+    <div class="muted">Tags</div>
+    <div class="chips">
+      <button class="chip ${tags.includes("trade") ? "on" : ""}" data-tag="trade">🔁 For trade</button>
+      <button class="chip ${tags.includes("grail") ? "on" : ""}" data-tag="grail">👑 Grail</button>
+    </div>
+    <div class="muted">Folders</div>
+    <div class="chips">${folders.map(f => `<button class="chip ${(x.folders || []).includes(f.id) ? "on" : ""}" data-fid="${f.id}">${f.emoji} ${esc(f.name)}</button>`).join("")}
+      <button class="chip" id="ownNewFolder">＋ New folder</button></div>`;
+  box.querySelectorAll("[data-tag]").forEach(b => b.onclick = () => {
+    const t = b.dataset.tag; x.tags = tags.includes(t) ? tags.filter(z => z !== t) : [...tags, t];
+    saveCollection(); renderCollection(); renderCardsOther(); renderOwnExtra(x, rerender);
+  });
+  box.querySelectorAll("[data-fid]").forEach(b => b.onclick = () => {
+    const id = b.dataset.fid, fs = x.folders || []; x.folders = fs.includes(id) ? fs.filter(z => z !== id) : [...fs, id];
+    saveCollection(); renderCardsOther(); renderOwnExtra(x, rerender);
+  });
+  $("ownNewFolder").onclick = () => newFolderForm(box, f => { x.folders = [...(x.folders || []), f.id]; saveCollection(); renderOwnExtra(x, rerender); });
+}
+function newFolderForm(container, onMade) {
+  let emoji = FOLDER_EMOJI[0];
+  const div = document.createElement("div"); div.className = "card"; div.style.marginTop = "10px";
+  const draw = () => {
+    div.innerHTML = `<b>New folder</b>
+      <input type="text" id="nfName" placeholder="e.g. My binder, Trade pile, Deck" maxlength="30" style="margin:8px 0">
+      <div class="chips">${FOLDER_EMOJI.map(e => `<button class="chip ${e === emoji ? "on" : ""}" data-e="${e}">${e}</button>`).join("")}</div>
+      <div class="row"><button class="btn ghost" id="nfCancel">Cancel</button><button class="btn yellow" id="nfMake">Make folder</button></div>`;
+    div.querySelectorAll("[data-e]").forEach(b => b.onclick = () => { const v = div.querySelector("#nfName").value; emoji = b.dataset.e; draw(); div.querySelector("#nfName").value = v; });
+    div.querySelector("#nfCancel").onclick = () => div.remove();
+    div.querySelector("#nfMake").onclick = () => {
+      const name = div.querySelector("#nfName").value.trim(); if (!name) { div.querySelector("#nfName").focus(); return; }
+      const f = { id: "f" + Date.now().toString(36), name, emoji }; folders.push(f); saveFolders(); div.remove(); checkBadges(); onMade && onMade(f);
+    };
+  };
+  draw(); container.appendChild(div); div.querySelector("#nfName").focus();
+}
+
+/* ---------- My cards: All / Folders / Wishlist / Trade / Grails ---------- */
+let cardsTab = "all", openFolderId = null;
+$("cardsSeg").querySelectorAll("button").forEach(b => b.onclick = () => { cardsTab = b.dataset.c; openFolderId = null; renderCardsTab(); });
+function renderCardsTab() {
+  $("cardsSeg").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.c === cardsTab));
+  $("cardsAll").style.display = cardsTab === "all" ? "block" : "none";
+  $("cardsOther").style.display = cardsTab === "all" ? "none" : "block";
+  if (cardsTab === "all") renderCollection(); else renderCardsOther();
+}
+function ownedTiles(list) {
+  return `<div class="grid">${list.map(x => `
+    <div class="tile" data-uid="${x.uid}">${x.qty > 1 ? `<span class="qty">×${x.qty}</span>` : ""}
+      <img loading="lazy" src="${imgUrl(x.image)}" onerror="this.src=PLACEHOLDER" alt="">
+      <div class="nm">${esc(x.name)}</div><div class="sub">${esc(x.setName || "")}</div><div class="val">${aud(cardValue(x))}</div></div>`).join("")}</div>`;
+}
+function bindOwned(root) { root.querySelectorAll(".tile[data-uid]").forEach(t => t.onclick = () => openOwnedSheet(t.dataset.uid)); }
+function renderCardsOther() {
+  const box = $("cardsOther"); if (cardsTab === "all" || !box) return;
+  const byVal = (a, b) => (cardValue(b) || 0) - (cardValue(a) || 0);
+  if (cardsTab === "wish") {
+    const total = wishlist.reduce((n, w) => n + (toAUD(w.price) || 0), 0);
+    box.innerHTML = wishlist.length ? `<div class="muted" style="margin:0 2px 10px">${wishlist.length} card${wishlist.length === 1 ? "" : "s"} wanted · about ${aud(total)} to get them all</div>
+      <div class="grid">${wishlist.map(w => `<div class="tile" data-id="${esc(w.cardId)}"><img loading="lazy" src="${imgUrl(w.image)}" onerror="this.src=PLACEHOLDER" alt="">
+        <div class="nm">${esc(w.name)}</div><div class="sub">${esc(w.setName || "")}</div><div class="val">${aud(toAUD(w.price))}</div></div>`).join("")}</div>`
+      : `<div class="empty">⭐ Your wishlist is empty.<br>Open any card you don't have yet (in <b>Sets</b> or a search) and tap <b>Add to wishlist</b>.</div>`;
+    box.querySelectorAll(".tile[data-id]").forEach(t => t.onclick = () => openAddSheet(t.dataset.id));
+  } else if (cardsTab === "trade") {
+    const tagged = collection.filter(x => (x.tags || []).includes("trade")).sort(byVal);
+    const spares = collection.filter(x => x.qty > 1 && !(x.tags || []).includes("trade")).sort(byVal);
+    box.innerHTML = (tagged.length ? `<div class="group-h"><h3>🔁 For trade</h3><span class="muted">${tagged.length}</span></div>${ownedTiles(tagged)}` : "") +
+      (spares.length ? `<div class="group-h"><h3>📦 Spares</h3><span class="muted">cards you have more than one of</span></div>${ownedTiles(spares)}` : "") ||
+      `<div class="empty">Nothing to trade yet.<br>Open a card in <b>My cards</b> and tag it <b>🔁 For trade</b>. Cards you have 2+ of show up here too.</div>`;
+    bindOwned(box);
+  } else if (cardsTab === "grail") {
+    const g = collection.filter(x => (x.tags || []).includes("grail")).sort(byVal);
+    box.innerHTML = g.length ? `<div class="muted" style="margin:0 2px 10px">👑 Your most treasured cards</div>${ownedTiles(g)}`
+      : `<div class="empty">👑 No grails yet.<br>Open your favourite card and tag it <b>Grail</b>.</div>`;
+    bindOwned(box);
+  } else if (cardsTab === "folders") {
+    if (openFolderId) {
+      const f = folders.find(z => z.id === openFolderId);
+      if (!f) { openFolderId = null; return renderCardsOther(); }
+      const list = collection.filter(x => (x.folders || []).includes(f.id)).sort(byVal);
+      box.innerHTML = `<div class="row" style="margin-bottom:12px"><button class="btn ghost" id="fBack" style="flex:none">← Folders</button><span></span>
+          <button class="btn ghost" id="fRename" style="flex:none">✏️</button><button class="btn ghost" id="fDelete" style="flex:none">🗑️</button></div>
+        <h2 style="margin:0 2px 4px">${f.emoji} ${esc(f.name)}</h2>
+        <div class="muted" style="margin:0 2px 10px">${list.reduce((n, x) => n + x.qty, 0)} cards · ${aud(sum(list))}</div>
+        ${list.length ? ownedTiles(list) : `<div class="empty">Empty folder.<br>Open any card in <b>My cards</b> and tap this folder's name to put it here.</div>`}`;
+      $("fBack").onclick = () => { openFolderId = null; renderCardsOther(); };
+      $("fRename").onclick = () => { const n = prompt("New name", f.name); if (n && n.trim()) { f.name = n.trim().slice(0, 30); saveFolders(); renderCardsOther(); } };
+      $("fDelete").onclick = () => { if (confirm(`Delete the folder "${f.name}"? The cards stay in your collection.`)) {
+        folders = folders.filter(z => z.id !== f.id); collection.forEach(x => { if (x.folders) x.folders = x.folders.filter(z => z !== f.id); });
+        saveFolders(); saveCollection(); openFolderId = null; renderCardsOther(); } };
+      bindOwned(box);
+      return;
+    }
+    box.innerHTML = folders.map(f => {
+      const list = collection.filter(x => (x.folders || []).includes(f.id));
+      const cover = [...list].sort(byVal)[0];
+      return `<div class="setrow" data-fid="${f.id}">
+        ${cover ? `<img class="logo" src="${imgUrl(cover.image)}" onerror="this.src=PLACEHOLDER" alt="" style="width:44px;height:60px;object-fit:cover;border-radius:4px">` : `<div class="logo txt" style="width:44px;height:60px;font-size:24px">${f.emoji}</div>`}
+        <div class="info"><div class="nm">${f.emoji} ${esc(f.name)}</div><div class="sub" style="margin:4px 0 0"><span>${list.reduce((n, x) => n + x.qty, 0)} cards</span><span>${aud(sum(list))}</span></div></div></div>`;
+    }).join("") + `<div id="folderNewBox"></div><button class="btn big ghost" id="btnNewFolder">＋ New folder</button>
+      ${folders.length ? "" : `<div class="muted" style="text-align:center;margin-top:10px">Folders are like binders: a trade pile, a deck, a "best cards" box. A card can be in more than one.</div>`}`;
+    box.querySelectorAll(".setrow[data-fid]").forEach(r => r.onclick = () => { openFolderId = r.dataset.fid; renderCardsOther(); });
+    $("btnNewFolder").onclick = () => newFolderForm($("folderNewBox"), () => renderCardsOther());
+  }
+}
+
+/* ---------- Value over time ---------- */
+function todayKey() { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+function recordHistory() {
+  const v = Math.round(collection.reduce((n, x) => n + (cardValue(x) || 0) * x.qty, 0) * 100) / 100;
+  const n = collection.reduce((s, x) => s + x.qty, 0), d = todayKey();
+  const last = valueHistory[valueHistory.length - 1];
+  if (last && last.d === d) { last.v = v; last.n = n; } else valueHistory.push({ d, v, n });
+  if (valueHistory.length > 1000) valueHistory = valueHistory.slice(-1000);
+  save(HKEY, valueHistory);
+}
+let chartRange = "30";
+function valueChart() {
+  const days = { "7": 7, "30": 30, "365": 365, all: 1e5 }[chartRange];
+  const cutoff = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
+  const pts = valueHistory.filter(h => h.d >= cutoff);
+  const seg = `<div class="seg" id="chartSeg" style="margin:8px 0">${[["7", "Week"], ["30", "Month"], ["365", "Year"], ["all", "All"]].map(([k, l]) => `<button data-r="${k}" class="${k === chartRange ? "on" : ""}">${l}</button>`).join("")}</div>`;
+  if (pts.length < 2) return `<div class="card"><b>📈 Value over time</b>${seg}<div class="muted" style="padding:18px 4px;text-align:center">Your chart starts today${pts.length ? ` at <b>${aud(pts[0].v)}</b>` : ""}.<br>Prices update once a day when you open the app, so come back tomorrow to see the line grow!</div></div>`;
+  const W = 320, H = 130, P = 6, vs = pts.map(p => p.v), min = Math.min(...vs), max = Math.max(...vs), span = max - min || 1;
+  const xy = pts.map((p, i) => [P + i * (W - 2 * P) / (pts.length - 1), H - P - (p.v - min) / span * (H - 2 * P)]);
+  const line = xy.map(([x, y]) => x.toFixed(1) + "," + y.toFixed(1)).join(" ");
+  const first = pts[0].v, last = pts[pts.length - 1].v, diff = last - first, pct = first ? Math.round(diff / first * 1000) / 10 : 0;
+  const fmtD = s => new Date(s + "T00:00").toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+  return `<div class="card"><b>📈 Value over time</b>${seg}
+    <div style="font-size:22px;font-weight:800">${aud(last)} <span style="font-size:14px;color:${diff >= 0 ? "var(--ok)" : "var(--danger)"}">${diff >= 0 ? "▲" : "▼"} ${aud(Math.abs(diff))} (${pct >= 0 ? "+" : ""}${pct}%)</span></div>
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;margin-top:8px" preserveAspectRatio="none">
+      <polygon points="${P},${H - P} ${line} ${W - P},${H - P}" fill="var(--accent)" opacity=".15"/>
+      <polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+      <circle cx="${xy[xy.length - 1][0]}" cy="${xy[xy.length - 1][1]}" r="4" fill="var(--accent)"/></svg>
+    <div class="muted" style="display:flex;justify-content:space-between;font-size:11px"><span>${fmtD(pts[0].d)}</span><span>${fmtD(pts[pts.length - 1].d)}</span></div>
+    <div class="muted" style="font-size:11px;margin-top:6px">Goes up when you add cards and when prices rise.</div></div>`;
+}
+function bindChart() { const s = $("chartSeg"); if (s) s.querySelectorAll("button").forEach(b => b.onclick = () => { chartRange = b.dataset.r; renderStats(); }); }
+
+// Update every price once a day, quietly, so the chart keeps moving.
+async function refreshAllPrices(onProgress) {
+  let done = 0, failed = 0;
+  for (const x of collection) {
+    onProgress && onProgress(done, collection.length);
+    try {
+      const c = await getJSON("/cards/" + encodeURIComponent(x.cardId));
+      x.price = pickPrice(c.pricing, x.variant); x.priceAt = Date.now(); x.dexId = c.dexId || []; x.stage = c.stage || null;
+      if (!x.addPrice) x.addPrice = x.price;
+    } catch (e) { failed++; }
+    done++;
+  }
+  for (const w of wishlist) { try { const c = await getJSON("/cards/" + encodeURIComponent(w.cardId)); w.price = pickPrice(c.pricing, cardVariants(c)[0] || "normal"); } catch (e) {} }
+  settings.lastRefresh = Date.now(); saveSettings(); saveWish(); saveCollection(); renderCollection(); refreshCurrent();
+  return { done, failed };
+}
+async function dailyRefresh() {
+  if (!collection.length || !navigator.onLine) { recordHistory(); return; }
+  if (Date.now() - (settings.lastRefresh || 0) < 20 * 3600e3) { recordHistory(); return; }
+  await refreshAllPrices();
+}
+
+/* ---------- Badges ---------- */
+const BADGES = [
+  ["first", "🎉", "First card", "Add your first card", c => [c.count, 1]],
+  ["c10", "🃏", "Ten cards", "Have 10 cards", c => [c.count, 10]],
+  ["c50", "📚", "Fifty!", "Have 50 cards", c => [c.count, 50]],
+  ["c100", "💯", "Century", "Have 100 cards", c => [c.count, 100]],
+  ["c250", "🏰", "Mega collector", "Have 250 cards", c => [c.count, 250]],
+  ["holo", "✨", "Shiny start", "Get a holo rare or better", c => [c.maxRank >= 4 ? 1 : 0, 1]],
+  ["ultra", "🌟", "Ultra find", "Get an ultra or illustration rare", c => [c.maxRank >= 7 ? 1 : 0, 1]],
+  ["secret", "👑", "Super rare pull", "Get a special illustration, gold or hyper rare", c => [c.maxRank >= 9 ? 1 : 0, 1]],
+  ["typefan", "⚡", "Type fan", "10 cards of one type", c => [c.maxType, 10]],
+  ["rainbow", "🌈", "Rainbow", "A card of all 11 types", c => [c.typesOwned, 11]],
+  ["sets3", "🧭", "Set explorer", "Cards from 3 different sets", c => [c.sets, 3]],
+  ["half", "🌗", "Halfway there", "Get half of any set", c => [c.bestPct, 50]],
+  ["complete", "🏆", "Set complete!", "Get every card in a set", c => [c.bestPct, 100]],
+  ["dex25", "🔍", "Pokémon spotter", "Catch 25 Pokémon", c => [c.dex, 25]],
+  ["dex100", "🎯", "Pokémon expert", "Catch 100 Pokémon", c => [c.dex, 100]],
+  ["kanto", "🗺️", "Kanto master", "Catch all 151 original Pokémon", c => [c.kanto, 151]],
+  ["star", "⭐", "★ Collector", "5 different cards of one Pokémon", c => [c.maxPerMon, 5]],
+  ["w100", "💰", "Treasure chest", "Collection worth A$100", c => [Math.floor(c.total), 100]],
+  ["w1000", "🏦", "Dragon's hoard", "Collection worth A$1,000", c => [Math.floor(c.total), 1000]],
+  ["big", "💎", "Jackpot", "One card worth A$50 or more", c => [Math.floor(c.maxCard), 50]],
+  ["trader", "🔁", "Trader", "Tag 5 cards for trade", c => [c.trade, 5]],
+  ["dreamer", "💭", "Dreamer", "10 cards on your wishlist", c => [c.wish, 10]],
+  ["organiser", "🗂️", "Organiser", "Make 3 folders", c => [c.folders, 3]],
+];
+const ENERGY = ["Grass", "Fire", "Water", "Lightning", "Psychic", "Fighting", "Darkness", "Metal", "Fairy", "Dragon", "Colorless"];
+function badgeContext() {
+  const c = { count: 0, total: 0, maxRank: 0, maxCard: 0, trade: 0, wish: wishlist.length, folders: folders.length };
+  const types = new Map(), setsHave = new Map();
+  for (const x of collection) {
+    c.count += x.qty; const v = cardValue(x) || 0; c.total += v * x.qty; c.maxCard = Math.max(c.maxCard, v);
+    c.maxRank = Math.max(c.maxRank, rarityRank(x.rarity));
+    if ((x.tags || []).includes("trade")) c.trade++;
+    for (const t of (x.types || [])) types.set(t, (types.get(t) || 0) + x.qty);
+    const sid = x.setId || setIdFromCardId(x.cardId); if (!setsHave.has(sid)) setsHave.set(sid, new Set()); setsHave.get(sid).add(x.cardId);
+  }
+  c.maxType = Math.max(0, ...types.values()); c.typesOwned = ENERGY.filter(t => types.has(t)).length; c.sets = setsHave.size;
+  c.bestPct = 0;
+  if (setsMap) for (const [sid, ids] of setsHave) {
+    const official = setsMap[sid]?.official; if (!official) continue;
+    const have = [...ids].filter(id => { const n = parseInt(id.slice(id.lastIndexOf("-") + 1), 10); return n && n <= official; }).length;
+    c.bestPct = Math.max(c.bestPct, Math.floor(have / official * 100));
+  }
+  const dex = ownedByDex(); c.dex = [...dex.keys()].filter(n => n >= 1 && n <= 1025).length;
+  c.kanto = [...dex.keys()].filter(n => n >= 1 && n <= 151).length;
+  c.maxPerMon = Math.max(0, ...[...dex.values()].map(s => s.size));
+  return c;
+}
+function checkBadges() {
+  const ctx = badgeContext();
+  const now = BADGES.filter(b => { const [h, n] = b[4](ctx); return h >= n; }).map(b => b[0]);
+  if (earnedBadges === null) { earnedBadges = now; save(BKEY, earnedBadges); return; } // first run: no fanfare for old cards
+  const fresh = now.filter(id => !earnedBadges.includes(id));
+  if (fresh.length) {
+    earnedBadges = [...new Set([...earnedBadges, ...fresh])]; save(BKEY, earnedBadges);
+    const b = BADGES.find(z => z[0] === fresh[0]);
+    setTimeout(() => toast(fresh.length === 1 ? `🏅 New badge: ${b[1]} ${b[2]}!` : `🏅 ${fresh.length} new badges! See Stats.`), 2100);
+  }
+}
+function badgesCard() {
+  const ctx = badgeContext(); let got = 0;
+  const tiles = BADGES.map(([id, emoji, name, how, f]) => {
+    const [h, n] = f(ctx), done = h >= n; if (done) got++;
+    return `<div class="badge ${done ? "got" : ""}" title="${esc(how)}"><div class="be">${emoji}</div><div class="bn">${esc(name)}</div>
+      <div class="bh">${esc(how)}</div>${done ? "" : `<div class="bar" style="height:5px;margin-top:5px"><i style="width:${Math.min(100, h / n * 100)}%"></i></div>`}</div>`;
+  }).join("");
+  return `<div class="card"><div class="row" style="justify-content:space-between"><b>🏅 Badges</b><span class="muted" style="flex:none">${got} of ${BADGES.length}</span></div>
+    <div class="badges">${tiles}</div></div>`;
+}
+
 function refreshCurrent() {
+  if (currentView === "collection") renderCardsOther();
   if (currentView === "sets" && $("setDetail").style.display !== "none" && openSet._redraw) openSet._redraw();
   else if (currentView === "sets") renderSets();
   else if (currentView === "dex") renderDex();
@@ -1051,7 +1350,7 @@ function refreshCurrent() {
 }
 
 renderHeader();
-setTimeout(backfillDex, 1500);
+setTimeout(() => backfillDex().then(dailyRefresh).then(() => { getSets().then(checkBadges).catch(() => {}); }), 1500);
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 // Ask the browser not to clear our saved data when the phone is low on space.
 if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});

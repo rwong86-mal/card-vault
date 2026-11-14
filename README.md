@@ -41,10 +41,12 @@ browser on that phone.
 
 ## What's in the app
 - **Scan**: camera scanning, plus **Quick scan** (adds each card straight away and keeps the camera open, with an Undo button).
-- **My cards**: group by type, how rare, value or set; sort and search.
+- **My cards**: group by type, how rare, value or set; sort and search. Tabs for **📁 Folders** (binders, trade piles, decks),
+  **⭐ Wishlist** (cards you want, and what they'd cost), **🔁 Trade** (tagged cards + spares) and **👑 Grails** (favourites).
 - **Sets**: a progress bar for every set (e.g. 48 of 165), tap one to see which cards are still missing.
 - **Pokédex**: every Pokémon by generation; shadows light up when you own a card of them. 5 different cards of one Pokémon earns a ★.
-- **Stats**: total value, most valuable cards, types, rarity and value by set.
+- **Stats**: value over time (week / month / year), 23 **🏅 badges** to earn, most valuable cards, types, rarity and value by set.
+  Prices update by themselves once a day when the app is opened.
 - **⚙️ Settings** (top right): dark or light mode, colour, card size, prices, backups.
 
 ## How to scan well
@@ -55,6 +57,12 @@ browser on that phone.
 - Tap the matching picture to confirm, pick the version (normal / reverse holo / holo), then **Add**.
 - Full-art, gold or very shiny cards can be hard to read. Use **Search by name** for those
   (adding the number, like `25` or `25/165`, makes it exact).
+
+## New sets and new Pokémon
+Nothing to do. The card database (TCGdex) adds new sets after they come out, and the app checks for new sets
+every day, so a new set's cards become scannable and show up in **Sets** on their own. New Pokémon are picked up
+the same way (checked monthly), and a new generation gets its own Pokédex tab automatically.
+If a brand-new card can't be found yet, try again in a few days.
 
 ## Good to know
 - **Prices** come from US (TCGplayer) and European (Cardmarket) shops and are converted to
