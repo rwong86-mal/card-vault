@@ -1,4 +1,4 @@
-# Sean's Card Vault
+# Card Vault
 
 A phone app that scans your Pokémon cards, finds them in a free card database,
 and keeps your collection **on your phone only**. Your cards can be grouped by
@@ -29,7 +29,7 @@ to live on a free website. GitHub Pages is free and easy:
 4. Go to **Settings → Pages**. Under *Branch* choose `main` and `/ (root)`, click **Save**.
 5. After a minute the address appears at the top, like `https://YOURNAME.github.io/card-vault/`.
 
-The website only holds the app itself. Sean's collection is never uploaded, it
+The website only holds the app itself. The collection is never uploaded, it
 stays in his phone's browser.
 
 ### Install it on the phone
@@ -56,7 +56,7 @@ browser on that phone.
   Use **Settings → Save backup** once in a while.
 - Only English cards for now.
 
-## Ideas for Sean to try next
+## Ideas to try next
 - Change the colours at the top of `index.html` (look for `--accent`).
 - Add a "wish list" for cards he wants.
 - Add a "duplicates" view to find cards to trade.
