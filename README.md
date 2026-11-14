@@ -39,6 +39,14 @@ stays in his phone's browser.
 Always open it from the home-screen icon. The collection is tied to that
 browser on that phone.
 
+## What's in the app
+- **Scan**: camera scanning, plus **Quick scan** (adds each card straight away and keeps the camera open, with an Undo button).
+- **My cards**: group by type, how rare, value or set; sort and search.
+- **Sets**: a progress bar for every set (e.g. 48 of 165), tap one to see which cards are still missing.
+- **Pokédex**: every Pokémon by generation; shadows light up when you own a card of them. 5 different cards of one Pokémon earns a ★.
+- **Stats**: total value, most valuable cards, types, rarity and value by set.
+- **⚙️ Settings** (top right): dark or light mode, colour, card size, prices, backups.
+
 ## How to scan well
 - Good light, no glare: tilt the card a little if the shiny part reflects.
 - Card flat, filling the yellow box, straight on.
