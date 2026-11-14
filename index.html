@@ -93,7 +93,7 @@
   .facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 14px; margin: 12px 0; }
   .facts span:nth-child(odd) { color: var(--muted); }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
-  .chip { padding: 8px 12px; border-radius: 20px; background: var(--panel2); border: 2px solid transparent; font-size: 14px; }
+  .chip { padding: 8px 12px; border-radius: 20px; background: var(--panel2); color: var(--text); border: 2px solid transparent; font-size: 14px; }
   .chip.on { border-color: var(--accent); }
   .qtybox { display: flex; align-items: center; gap: 12px; justify-content: center; margin: 12px 0; }
   .qtybox button { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--panel2); color: var(--text); font-size: 22px; }
@@ -632,13 +632,16 @@ function openSheet(html) { $("sheet").innerHTML = html; $("sheet").classList.add
 function closeSheet() { $("sheet").classList.remove("show"); $("sheetBg").classList.remove("show"); }
 $("sheetBg").onclick = closeSheet;
 const VARIANT_LABELS = { normal: "Normal", reverse: "Reverse holo", holo: "Holo", firstEdition: "1st Edition" };
+// Most common version first, so the default is never the rare 1st Edition.
+const VARIANT_ORDER = ["normal", "holo", "reverse", "firstEdition"];
+function cardVariants(c) { return VARIANT_ORDER.filter(k => c.variants && c.variants[k]); }
 
 async function openAddSheet(id) {
   openSheet('<div class="empty"><span class="spinner"></span>Loading card…</div>');
   let c;
   try { c = await getJSON("/cards/" + encodeURIComponent(id)); }
   catch (e) { openSheet(`<div class="empty">Couldn't load the card: ${esc(e.message)}</div>`); return; }
-  const variants = Object.entries(c.variants || {}).filter(([k, v]) => v && VARIANT_LABELS[k]).map(([k]) => k);
+  const variants = cardVariants(c);
   if (!variants.length) variants.push("normal");
   let variant = variants[0], qty = 1;
   const owned = collection.filter(x => x.cardId === c.id).reduce((n, x) => n + x.qty, 0);
@@ -830,8 +833,7 @@ async function quickAdd(id) {
   status('<span class="spinner"></span>Adding…');
   try {
     const c = await getJSON("/cards/" + encodeURIComponent(id));
-    const variants = Object.entries(c.variants || {}).filter(([k, v]) => v && VARIANT_LABELS[k]).map(([k]) => k);
-    const variant = variants[0] || "normal";
+    const variant = cardVariants(c)[0] || "normal";
     const before = JSON.stringify(collection);
     addCard(c, variant, 1);
     toast(`Added ${c.name}!`, () => { collection = JSON.parse(before); saveCollection(); renderCollection(); toast("Undone"); });
