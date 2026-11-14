@@ -1,11 +1,10 @@
 # Card Vault
 
-A phone app that scans your Pokémon cards, finds them in a free card database,
-and keeps your collection **on your phone only**. Your cards can be grouped by
+A phone app that finds your Pokémon cards (by name and card number) in a free card database,
+and keeps your collection **on your phone**, with an optional backup to your own Google Drive. Your cards can be grouped by
 type, how rare they are, value, or set.
 
 Everything is free:
-- **Reading the card** happens on the phone (Tesseract, a free text reader). No photo ever leaves the phone.
 - **Card info, pictures and prices** come from TCGdex, a free card database. No account or key needed.
 - **Your collection** is saved inside the phone's browser. Nobody else can see it.
 
@@ -13,15 +12,15 @@ Everything is free:
 
 | File | What it does |
 |---|---|
-| `index.html` | The whole app: screens, camera, card reading, lookups, collection |
+| `index.html` | The whole app: screens, search, lookups, collection, Google backup |
 | `manifest.json` | Lets the phone install it like a real app (icon, name) |
 | `sw.js` | Lets the app open even without internet |
 | `icon.svg`, `icon-192.png`, `icon-512.png` | The app icon |
 
 ## Putting it on the phone (free, about 10 minutes)
 
-Phones only allow the camera on a secure (https) web address, so the app needs
-to live on a free website. GitHub Pages is free and easy:
+The app needs to live on a free website so the phone can open and install it.
+GitHub Pages is free and easy:
 
 1. Make a free account at **github.com** (a parent account is fine).
 2. Click **+ → New repository**. Name it `card-vault`, choose **Public**, tick **Add a README**, click **Create**.
@@ -40,7 +39,7 @@ Always open it from the home-screen icon. The collection is tied to that
 browser on that phone.
 
 ## What's in the app
-- **Scan**: camera scanning, plus **Quick scan** (adds each card straight away and keeps the camera open, with an Undo button).
+- **➕ Add**: type the name and/or the number from the bottom of the card (like `025/165`); matching cards show big so you can pick yours.
 - **My cards**: group by type, how rare, value or set; sort and search. Tabs for **📁 Folders** (binders, trade piles, decks),
   **⭐ Wishlist** (cards you want, and what they'd cost), **🔁 Trade** (tagged cards + spares) and **👑 Grails** (favourites).
 - **Sets**: a progress bar for every set (e.g. 48 of 165), tap one to see which cards are still missing.
@@ -49,14 +48,11 @@ browser on that phone.
   Prices update by themselves once a day when the app is opened.
 - **⚙️ Settings** (top right): dark or light mode, colour, card size, prices, backups.
 
-## How to scan well
-- Good light, no glare: tilt the card a little if the shiny part reflects.
-- Card flat, filling the yellow box, straight on.
-- The scanner reads the **card number at the bottom** (like `025/165`) and the **name at the top**.
-  The number does most of the work.
-- Tap the matching picture to confirm, pick the version (normal / reverse holo / holo), then **Add**.
-- Full-art, gold or very shiny cards can be hard to read. Use **Search by name** for those
-  (adding the number, like `25` or `25/165`, makes it exact).
+## Finding a card fast
+- The **card number** is at the bottom of the card, e.g. `025/165`. Name + full number usually finds the exact card.
+- Number only works too (`25/165`). Name only shows every version of that Pokémon, newest sets first.
+- Promo cards have numbers like `SWSH001`; type that into the number box.
+- Tap your card, pick the version (normal / reverse holo / holo), then **Add to my cards**.
 
 ## ☁️ Google Drive backup
 In **⚙️ Settings → Google Drive backup**, tap **Sign in with Google** (use the Google account added as a test user
@@ -69,7 +65,7 @@ sign in with the same Google account, and everything comes back.
 
 ## New sets and new Pokémon
 Nothing to do. The card database (TCGdex) adds new sets after they come out, and the app checks for new sets
-every day, so a new set's cards become scannable and show up in **Sets** on their own. New Pokémon are picked up
+every day, so a new set's cards can be found and show up in **Sets** on their own. New Pokémon are picked up
 the same way (checked monthly), and a new generation gets its own Pokédex tab automatically.
 If a brand-new card can't be found yet, try again in a few days.
 

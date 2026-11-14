@@ -158,6 +158,10 @@
   .badge .bh { font-size: 10px; color: var(--muted); line-height: 1.25; margin-top: 2px; }
   #cardsSeg button { font-size: 12px; padding: 8px 2px; }
   .syncbar { position: sticky; top: 64px; z-index: 4; background: var(--accent2); color: #fff; text-align: center; padding: 9px 12px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .grid.big { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .grid.big .tile .nm { font-size: 14px; font-weight: 700; }
+  .grid.big .tile .sub { font-size: 12px; }
+  .grid.big.one { grid-template-columns: minmax(0, 300px); justify-content: center; }
   label.f { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
 </style>
 </head>
@@ -172,40 +176,19 @@
 <main>
   <!-- SCAN -->
   <section class="view active" id="view-scan">
-    <div class="cam" id="cam">
-      <video id="video" playsinline muted autoplay></video>
-      <img class="still" id="still" alt="" style="display:none">
-      <div class="guide" id="guide"></div>
-      <div class="msg" id="camMsg">Tap <b>&nbsp;Start camera&nbsp;</b> below</div>
+    <div class="card">
+      <b style="font-size:17px">➕ Add a card</b>
+      <div class="muted" style="margin:4px 0 12px">Type the Pokémon's name and the number from the bottom of the card (like <b>025/165</b>). Either one works on its own too.</div>
+      <label class="f" for="searchName">Name</label>
+      <input type="text" id="searchName" placeholder="e.g. Pikachu" autocomplete="off" enterkeyhint="search">
+      <label class="f" for="searchNum">Card number</label>
+      <input type="text" id="searchNum" placeholder="e.g. 25 or 025/165" inputmode="text" autocomplete="off" enterkeyhint="search">
+      <div style="height:12px"></div>
+      <button class="btn big yellow" id="btnSearch">🔍 Find my card</button>
     </div>
-    <div style="height:30px"></div>
-    <div class="row">
-      <button class="btn ghost" id="btnStartCam">📷 Start camera</button>
-      <button class="btn yellow" id="btnSnap" disabled>Snap card</button>
-    </div>
-    <div style="height:10px"></div>
-    <div class="row">
-      <label class="btn ghost" style="text-align:center">🖼️ Use a photo
-        <input type="file" id="fileInput" accept="image/*" style="display:none">
-      </label>
-    </div>
-    <label class="switch"><span><b>⚡ Quick scan</b><br><span class="muted">Adds the card straight away and keeps the camera open — great for a stack of cards.</span></span>
-      <input type="checkbox" id="quickMode"></label>
-
     <div class="status" id="scanStatus"></div>
     <div id="detected" class="muted" style="margin:6px 2px"></div>
-    <div class="grid" id="candidates"></div>
-
-    <div class="card" style="margin-top:16px">
-      <b>Search by name instead</b>
-      <div class="muted" style="margin:4px 0 10px">Handy for shiny or full-art cards the scanner can't read.</div>
-      <div class="row">
-        <input type="text" id="searchName" placeholder="e.g. Pikachu" autocomplete="off">
-        <input type="text" id="searchNum" placeholder="No. e.g. 25" style="max-width:110px" inputmode="numeric" autocomplete="off">
-      </div>
-      <div style="height:10px"></div>
-      <button class="btn big" id="btnSearch">Search</button>
-    </div>
+    <div class="grid big" id="candidates"></div>
   </section>
 
   <!-- COLLECTION -->
@@ -308,7 +291,7 @@
 </main>
 
 <nav>
-  <button class="active" data-view="scan"><span class="ico">📷</span>Scan</button>
+  <button class="active" data-view="scan"><span class="ico">➕</span>Add</button>
   <button data-view="collection"><span class="ico">🗂️</span>My cards</button>
   <button data-view="sets"><span class="ico">📚</span>Sets</button>
   <button data-view="dex"><span class="ico">🔴</span>Pokédex</button>
@@ -320,7 +303,6 @@
 <div class="toast" id="toast"></div>
 
 <canvas id="work" style="display:none"></canvas>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 "use strict";
 /* ======================= Settings & storage (all on this phone) ======================= */
@@ -447,7 +429,6 @@ function setIdFromCardId(id) { const i = id.lastIndexOf("-"); return i > 0 ? id.
 
 /* ======================= Camera ======================= */
 let stream = null;
-$("btnStartCam").onclick = startCamera;
 async function startCamera() {
   if (!navigator.mediaDevices?.getUserMedia) { alert("This browser can't use the camera here. Try 'Use a photo' instead."); return; }
   try {
@@ -457,10 +438,10 @@ async function startCamera() {
     $("camMsg").style.display = "none"; $("btnSnap").disabled = false; $("btnStartCam").textContent = "🔁 Restart";
   } catch (e) { $("camMsg").textContent = "Camera blocked: " + e.message + ". Allow camera access, or use a photo."; }
 }
-function stopCamera() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } $("btnSnap").disabled = true; }
+function stopCamera() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
 
 // Copy just the part of the video inside the yellow box.
-$("btnSnap").onclick = () => {
+const snapFromCamera = () => { // camera scanning is switched off; kept for later
   const v = $("video"), g = $("guide");
   const vw = v.videoWidth, vh = v.videoHeight; if (!vw) return;
   const vr = v.getBoundingClientRect(), gr = g.getBoundingClientRect();
@@ -474,7 +455,7 @@ $("btnSnap").onclick = () => {
   stopCamera();
   scanCard(c);
 };
-$("fileInput").onchange = (e) => {
+const scanFromPhoto = (e) => {
   const f = e.target.files[0]; if (!f) return;
   const img = new Image();
   img.onload = () => {
@@ -612,14 +593,15 @@ async function findCandidates(found, words) {
 function dedupe(arr) { const seen = new Set(); return arr.filter(c => !seen.has(c.id) && seen.add(c.id)); }
 
 function showCandidates(list, fromScan) {
-  if (!list.length) { status("No match found. Try again, or search by name below."); return; }
-  status(list.length === 1 ? "Found it! Tap the card to check and add it." : `Found ${list.length} possible cards. Tap the one that matches yours.`);
+  if (!list.length) { status("No match found. Check the spelling or the number and try again."); return; }
+  status(list.length === 1 ? "Found it! Tap the card to add it." : `Found ${list.length} cards. Tap the one that matches yours.`);
   $("candidates").innerHTML = list.map((c, i) => `
     <div class="tile ${i === 0 ? "best" : ""}" data-id="${esc(c.id)}">
-      <img loading="lazy" src="${imgUrl(c.image)}" onerror="this.src=PLACEHOLDER" alt="">
+      <img loading="lazy" src="${imgUrl(c.image, "high")}" onerror="this.onerror=null;this.src='${imgUrl(c.image)}'" alt="">
       <div class="nm">${esc(c.name)}</div>
       <div class="sub">${esc(c.setName || "")} · ${esc(c.localId)}${c.setOfficial ? "/" + c.setOfficial : ""}</div>
     </div>`).join("");
+  $("candidates").classList.toggle("one", list.length === 1);
   $("candidates").querySelectorAll(".tile").forEach(t => t.onclick = () => settings.quick && fromScan ? quickAdd(t.dataset.id) : openAddSheet(t.dataset.id));
   $("candidates").scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -646,6 +628,7 @@ $("btnSearch").onclick = async () => {
   } catch (e) { status("Search failed: " + esc(e.message)); }
 };
 $("searchName").addEventListener("keydown", e => { if (e.key === "Enter") $("btnSearch").click(); });
+$("searchNum").addEventListener("keydown", e => { if (e.key === "Enter") $("btnSearch").click(); });
 
 /* ======================= Add sheet ======================= */
 function openSheet(html) { $("sheet").innerHTML = html; $("sheet").classList.add("show"); $("sheetBg").classList.add("show"); }
@@ -718,7 +701,7 @@ function renderCollection() {
   const gb = settings.groupBy, sb = settings.sortBy, q = $("filterText").value.trim().toLowerCase();
   $("groupBy").value = gb; $("sortBy").value = sb;
   let items = collection.filter(x => !q || (x.name + " " + x.setName + " " + typeOf(x) + " " + x.rarity).toLowerCase().includes(q));
-  if (!collection.length) { $("collectionList").innerHTML = '<div class="empty">No cards yet.<br>Go to <b>Scan</b> and add your first one!</div>'; return; }
+  if (!collection.length) { $("collectionList").innerHTML = '<div class="empty">No cards yet.<br>Go to <b>➕ Add</b> and find your first one!</div>'; return; }
   const sorters = {
     value: (a, b) => (cardValue(b) ?? -1) - (cardValue(a) ?? -1),
     rarity: (a, b) => rarityRank(b.rarity) - rarityRank(a.rarity) || (cardValue(b) ?? -1) - (cardValue(a) ?? -1),
@@ -854,8 +837,6 @@ $("themeSeg").querySelectorAll("button").forEach(b => b.onclick = () => { settin
 $("sizeSeg").querySelectorAll("button").forEach(b => b.onclick = () => { settings.tile = b.dataset.s; saveSettings(); applyLook(); renderLook(); });
 
 /* ======================= Quick scan ======================= */
-$("quickMode").checked = !!settings.quick;
-$("quickMode").onchange = e => { settings.quick = e.target.checked; saveSettings(); };
 async function quickAdd(id) {
   status('<span class="spinner"></span>Adding…');
   try {
@@ -894,7 +875,7 @@ function ownedBySet() {
 async function renderSets() {
   $("setDetail").style.display = "none"; $("setsList").style.display = "block";
   const owned = ownedBySet();
-  if (!owned.size) { $("setsList").innerHTML = '<div class="empty">No sets yet.<br>Scan some cards and your sets will show up here with a progress bar.</div>'; return; }
+  if (!owned.size) { $("setsList").innerHTML = '<div class="empty">No sets yet.<br>Add some cards and your sets will show up here with a progress bar.</div>'; return; }
   let sets = {};
   try { sets = await getSets(); } catch (e) {}
   const ids = [...owned.keys()].sort((a, b) => (sets[b]?.order ?? -1) - (sets[a]?.order ?? -1));
@@ -1044,7 +1025,7 @@ function bars(rows, fmt) {
   return rows.map(([label, v, color]) => `<div class="brow"><span class="lbl">${label}</span><div class="bar"><i style="width:${v / max * 100}%;${color ? "background:" + color : ""}"></i></div><span>${fmt ? fmt(v) : v}</span></div>`).join("");
 }
 function renderStats() {
-  if (!collection.length) { $("statsBody").innerHTML = '<div class="empty">No cards yet — scan some and your stats appear here.</div>' + badgesCard(); return; }
+  if (!collection.length) { $("statsBody").innerHTML = '<div class="empty">No cards yet — add some and your stats appear here.</div>' + badgesCard(); return; }
   const count = collection.reduce((n, x) => n + x.qty, 0);
   const total = collection.reduce((n, x) => n + (cardValue(x) || 0) * x.qty, 0);
   const unique = new Set(collection.map(x => x.cardId)).size;
