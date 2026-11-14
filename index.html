@@ -157,6 +157,7 @@
   .badge .bn { font-size: 12px; font-weight: 700; margin-top: 2px; }
   .badge .bh { font-size: 10px; color: var(--muted); line-height: 1.25; margin-top: 2px; }
   #cardsSeg button { font-size: 12px; padding: 8px 2px; }
+  .syncbar { position: sticky; top: 64px; z-index: 4; background: var(--accent2); color: #fff; text-align: center; padding: 9px 12px; font-size: 13px; font-weight: 600; cursor: pointer; }
   label.f { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
 </style>
 </head>
@@ -167,6 +168,7 @@
   <button class="iconbtn" id="btnSettings" aria-label="Settings">⚙️</button>
 </header>
 
+<div id="syncBar" class="syncbar" style="display:none">☁️ Changes not backed up yet — tap to back up to Google</div>
 <main>
   <!-- SCAN -->
   <section class="view active" id="view-scan">
@@ -283,7 +285,11 @@
       <div class="muted" id="refreshStatus" style="margin-top:8px"></div>
     </div>
     <div class="card">
-      <b>Backup</b>
+      <b>☁️ Google Drive backup</b>
+      <div id="cloudBody"></div>
+    </div>
+    <div class="card">
+      <b>Backup file</b>
       <div class="muted" style="margin:4px 0 10px">The collection lives only on this phone, inside this browser. If the browser data is cleared it's gone, so save a backup file now and then (it stays on the phone unless you move it).</div>
       <div class="row">
         <button class="btn ghost" id="btnExport">💾 Save backup</button>
@@ -333,7 +339,7 @@ function save(key, value) {
 let collection = load(KEY, []);
 let settings = Object.assign({ rateUSD: 1.53, rateEUR: 1.78, groupBy: "type", sortBy: "value",
   theme: "dark", accent: "#ffcb05", tile: "medium", quick: false }, load(SKEY, {}));
-function saveCollection() { save(KEY, collection); renderHeader(); if (typeof recordHistory === "function") { recordHistory(); checkBadges(); } }
+function saveCollection() { save(KEY, collection); renderHeader(); if (typeof recordHistory === "function") { recordHistory(); checkBadges(); markChanged(); } }
 function saveSettings() { save(SKEY, settings); }
 
 /* ======================= Helpers ======================= */
@@ -822,7 +828,7 @@ function showView(name) {
   if (name === "sets") renderSets();
   if (name === "dex") renderDex();
   if (name === "stats") renderStats();
-  if (name === "settings") renderLook();
+  if (name === "settings") { renderLook(); prepGoogle(); cloudUI(); }
   window.scrollTo(0, 0);
 }
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => showView(b.dataset.view));
@@ -1080,8 +1086,8 @@ let folders = load(FKEY, []);
 let valueHistory = load(HKEY, []);
 let earnedBadges = load(BKEY, null);
 if (earnedBadges === null && !collection.length) earnedBadges = []; // brand-new app: celebrate every badge
-const saveWish = () => save(WKEY, wishlist);
-const saveFolders = () => save(FKEY, folders);
+const saveWish = () => { save(WKEY, wishlist); markChanged(); };
+const saveFolders = () => { save(FKEY, folders); markChanged(); };
 
 /* ---------- Wishlist ---------- */
 const isWished = id => wishlist.some(w => w.cardId === id);
@@ -1341,6 +1347,165 @@ function badgesCard() {
     <div class="badges">${tiles}</div></div>`;
 }
 
+
+/* ======================= Google Drive backup (your own Drive, hidden app folder) ======================= */
+const GOOGLE_CLIENT_ID = "961745694123-52oq00gnjsaoaltu7s46ioq0gom4deot.apps.googleusercontent.com";
+const G_SCOPE = "https://www.googleapis.com/auth/drive.appdata email";
+const G_FILE = "card-vault-backup.json";
+const GTOKEN_KEY = "cardvault.gtoken.v1";
+let tokenClient = null, gPending = null, syncTimer = null, syncing = false;
+const gReady = () => GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.startsWith("__");
+
+function backupPayload() {
+  return { app: "cardvault", version: 2, savedAt: new Date().toISOString(), collection, wishlist, folders, history: valueHistory, badges: earnedBadges };
+}
+function applyBackup(data) {
+  if (!Array.isArray(data.collection)) throw new Error("not a Card Vault backup");
+  collection = data.collection;
+  if (Array.isArray(data.wishlist)) { wishlist = data.wishlist; saveWish(); }
+  if (Array.isArray(data.folders)) { folders = data.folders; saveFolders(); }
+  if (Array.isArray(data.history)) { valueHistory = data.history; save(HKEY, valueHistory); }
+  if (Array.isArray(data.badges)) { earnedBadges = data.badges; save(BKEY, earnedBadges); }
+  save(KEY, collection); renderHeader(); renderCollection(); refreshCurrent();
+}
+
+function loadGIS() {
+  return new Promise((res, rej) => {
+    if (window.google?.accounts?.oauth2) return res();
+    const s = document.createElement("script"); s.src = "https://accounts.google.com/gsi/client";
+    s.onload = () => res(); s.onerror = () => rej(new Error("Couldn't reach Google")); document.head.appendChild(s);
+  });
+}
+async function prepGoogle() {
+  if (!gReady() || tokenClient) return;
+  try {
+    await loadGIS();
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID, scope: G_SCOPE,
+      callback: r => { const p = gPending; gPending = null;
+        if (r.error) { p && p.reject(new Error(r.error)); return; }
+        const tok = { t: r.access_token, exp: Date.now() + (r.expires_in - 60) * 1000 };
+        try { localStorage.setItem(GTOKEN_KEY, JSON.stringify(tok)); } catch (e) {}
+        p && p.resolve(tok.t); },
+      error_callback: e => { const p = gPending; gPending = null; p && p.reject(new Error(e.type === "popup_closed" ? "Sign-in was closed" : (e.message || e.type))); }
+    });
+  } catch (e) { /* offline — try again later */ }
+}
+function savedToken() { const t = load(GTOKEN_KEY, null); return t && t.exp > Date.now() ? t.t : null; }
+// Must be called straight from a tap (browsers block the Google pop-up otherwise).
+function askGoogle() {
+  return new Promise((resolve, reject) => {
+    if (!tokenClient) { prepGoogle(); reject(new Error("Google is still loading — tap again in a second")); return; }
+    gPending = { resolve, reject };
+    tokenClient.requestAccessToken({ prompt: settings.gLinked ? "" : "consent", login_hint: settings.gEmail || undefined });
+  });
+}
+async function gfetch(token, url, opts = {}) {
+  const r = await fetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: "Bearer " + token } });
+  if (r.status === 401) { localStorage.removeItem(GTOKEN_KEY); throw new Error("signin"); }
+  if (!r.ok) throw new Error("Google Drive said " + r.status);
+  return r;
+}
+async function driveFind(token) {
+  const q = encodeURIComponent(`name='${G_FILE}'`);
+  const r = await gfetch(token, `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id,modifiedTime)`);
+  const d = await r.json(); return d.files && d.files[0] ? d.files[0].id : null;
+}
+async function driveRead(token, id) { return (await gfetch(token, `https://www.googleapis.com/drive/v3/files/${id}?alt=media`)).json(); }
+async function driveWrite(token, id, data) {
+  const body = JSON.stringify(data);
+  if (id) { await gfetch(token, `https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body }); return id; }
+  const boundary = "cv" + Date.now();
+  const multipart = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name: G_FILE, parents: ["appDataFolder"] })}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${boundary}--`;
+  const r = await gfetch(token, "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", { method: "POST", headers: { "Content-Type": "multipart/related; boundary=" + boundary }, body: multipart });
+  return (await r.json()).id;
+}
+
+// Sign in (first time on this phone): restore if the phone is empty, otherwise ask which copy to keep.
+async function linkGoogle() {
+  let token;
+  try { token = await askGoogle(); } catch (e) { cloudUI(e.message); return; }
+  cloudUI("Connecting…");
+  try {
+    try { const u = await (await gfetch(token, "https://www.googleapis.com/oauth2/v3/userinfo")).json(); settings.gEmail = u.email || settings.gEmail; } catch (e) {}
+    const id = await driveFind(token);
+    settings.gLinked = true; settings.gFileId = id; saveSettings();
+    if (id) {
+      const cloud = await driveRead(token, id);
+      const n = (cloud.collection || []).length;
+      if (!collection.length && n) { applyBackup(cloud); settings.lastSync = Date.now(); saveSettings(); toast(`☁️ Restored ${n} card${n === 1 ? "" : "s"} from Google!`); cloudUI(); return; }
+      if (n && collection.length && confirm(`Google already has a backup from ${new Date(cloud.savedAt).toLocaleString("en-AU")} with ${n} cards.\n\nOK = use the Google backup\nCancel = keep the ${collection.length} cards on this phone and back those up instead`)) {
+        applyBackup(cloud); settings.lastSync = Date.now(); saveSettings(); toast("☁️ Restored from Google"); cloudUI(); return;
+      }
+    }
+    await syncNow(true);
+  } catch (e) { cloudUI(e.message === "signin" ? "Please sign in again." : e.message); }
+}
+async function syncNow(fromTap) {
+  if (!settings.gLinked || syncing) return;
+  if (!collection.length && !fromTap) return; // never quietly overwrite a backup with an empty phone
+  let token = savedToken();
+  if (!token) {
+    if (!fromTap) { settings.gDirty = true; saveSettings(); cloudUI(); return; }
+    try { token = await askGoogle(); } catch (e) { cloudUI(e.message); return; }
+  }
+  syncing = true; cloudUI("Backing up…");
+  try {
+    settings.gFileId = await driveWrite(token, settings.gFileId || await driveFind(token), backupPayload());
+    settings.lastSync = Date.now(); settings.gDirty = false; saveSettings();
+    if (fromTap) toast("☁️ Backed up to Google");
+  } catch (e) {
+    if (e.message === "signin") settings.gDirty = true; else if (String(e.message).includes("404")) settings.gFileId = null;
+    saveSettings();
+  } finally { syncing = false; cloudUI(); }
+}
+async function restoreFromGoogle() {
+  let token = savedToken();
+  try { if (!token) token = await askGoogle(); } catch (e) { cloudUI(e.message); return; }
+  try {
+    const id = settings.gFileId || await driveFind(token);
+    if (!id) { alert("There's no backup in Google yet."); return; }
+    const cloud = await driveRead(token, id);
+    if (confirm(`Replace the cards on this phone with the Google backup from ${new Date(cloud.savedAt).toLocaleString("en-AU")} (${(cloud.collection || []).length} cards)?`)) {
+      applyBackup(cloud); settings.gFileId = id; settings.lastSync = Date.now(); settings.gDirty = false; saveSettings(); toast("☁️ Restored from Google");
+    }
+  } catch (e) { alert("Couldn't restore: " + (e.message === "signin" ? "please sign in again" : e.message)); }
+  cloudUI();
+}
+function unlinkGoogle() {
+  if (!confirm("Stop backing up to Google on this phone? The backup already in Google stays there.")) return;
+  const t = savedToken(); if (t && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(t, () => {});
+  localStorage.removeItem(GTOKEN_KEY);
+  Object.assign(settings, { gLinked: false, gFileId: null, gDirty: false }); saveSettings(); cloudUI();
+}
+// Called whenever anything changes.
+function markChanged() {
+  if (!settings.gLinked) return;
+  settings.gDirty = true;
+  clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(false), 3000);
+  cloudUI();
+}
+function cloudUI(msg) {
+  const bar = $("syncBar"), box = $("cloudBody");
+  const linked = settings.gLinked, needsTap = linked && settings.gDirty && !savedToken();
+  if (bar) bar.style.display = needsTap ? "block" : "none";
+  if (!box) return;
+  if (!gReady()) { box.innerHTML = '<div class="muted">Google backup isn\'t set up yet.</div>'; return; }
+  const when = settings.lastSync ? new Date(settings.lastSync).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "never";
+  box.innerHTML = linked ? `
+      <div class="muted" style="margin:4px 0 10px">Backing up to <b>${esc(settings.gEmail || "your Google account")}</b><br>Last backup: <b>${when}</b>${settings.gDirty ? " · changes waiting" : " ✓"}${msg ? `<br>${esc(msg)}` : ""}</div>
+      <div class="row"><button class="btn yellow" id="gSync">☁️ Back up now</button><button class="btn ghost" id="gRestore">⬇️ Restore</button></div>
+      <div style="height:8px"></div><button class="btn ghost" id="gUnlink" style="width:100%">Stop backing up</button>`
+    : `<div class="muted" style="margin:4px 0 10px">Keep a copy of everything in your Google Drive, so your cards come back even if this app is deleted or you get a new phone. Only this app can see it.${msg ? `<br><b>${esc(msg)}</b>` : ""}</div>
+      <button class="btn big yellow" id="gLink">Sign in with Google</button>`;
+  if ($("gLink")) $("gLink").onclick = linkGoogle;
+  if ($("gSync")) $("gSync").onclick = () => syncNow(true);
+  if ($("gRestore")) $("gRestore").onclick = restoreFromGoogle;
+  if ($("gUnlink")) $("gUnlink").onclick = unlinkGoogle;
+}
+$("syncBar").onclick = () => syncNow(true);
+if (settings.gLinked) prepGoogle();
+
 function refreshCurrent() {
   if (currentView === "collection") renderCardsOther();
   if (currentView === "sets" && $("setDetail").style.display !== "none" && openSet._redraw) openSet._redraw();
@@ -1350,6 +1515,8 @@ function refreshCurrent() {
 }
 
 renderHeader();
+cloudUI();
+if (settings.gLinked && settings.gDirty && savedToken()) syncNow(false);
 setTimeout(() => backfillDex().then(dailyRefresh).then(() => { getSets().then(checkBadges).catch(() => {}); }), 1500);
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 // Ask the browser not to clear our saved data when the phone is low on space.

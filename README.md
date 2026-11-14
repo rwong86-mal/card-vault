@@ -58,6 +58,15 @@ browser on that phone.
 - Full-art, gold or very shiny cards can be hard to read. Use **Search by name** for those
   (adding the number, like `25` or `25/165`, makes it exact).
 
+## ☁️ Google Drive backup
+In **⚙️ Settings → Google Drive backup**, tap **Sign in with Google** (use the Google account added as a test user
+in the Google Cloud project "Card Vault"). After that every change is backed up automatically to a hidden app folder
+in that Google Drive — only this app can see it. If the app is deleted or you get a new phone: open the website,
+sign in with the same Google account, and everything comes back.
+- The first time, Google shows "Google hasn't verified this app" — tap **Continue** (it's your own app).
+- Sign-ins last about an hour; when a blue "tap to back up" bar appears, tap it.
+- To let another Google account sign in, add it under Google Cloud → Google Auth Platform → Audience → Test users.
+
 ## New sets and new Pokémon
 Nothing to do. The card database (TCGdex) adds new sets after they come out, and the app checks for new sets
 every day, so a new set's cards become scannable and show up in **Sets** on their own. New Pokémon are picked up
